@@ -1,0 +1,41 @@
+# Secrets. .env.example is committed; .env never is.
+.env
+.env.local
+.env.*.local
+
+# Python environment and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# Model weights and downloads. Keep multi-GB artifacts out of git.
+models/
+*.safetensors
+*.gguf
+*.npz
+
+# Logs and scratch output
+*.log
+tmp/
+scratch/
+
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~

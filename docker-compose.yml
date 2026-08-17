@@ -1,0 +1,25 @@
+services:
+  gateway:
+    build: ./gateway
+    image: mlx-openai-gateway:local
+    container_name: mlx-gateway
+    restart: unless-stopped
+    ports:
+      # Bind to loopback only. Change to 0.0.0.0 to expose on the LAN.
+      - "127.0.0.1:${GATEWAY_PORT:-8000}:8000"
+    environment:
+      # Both keys are optional. Empty means no auth, which is safe only while
+      # the gateway and the engine stay bound to loopback.
+      GATEWAY_API_KEYS: ${GATEWAY_API_KEYS:-}
+      MLX_ENGINE_API_KEY: ${MLX_ENGINE_API_KEY:-}
+      MLX_UPSTREAM_URL: ${MLX_UPSTREAM_URL:-http://host.docker.internal:8080}
+      GATEWAY_TIMEOUT_SECONDS: ${GATEWAY_TIMEOUT_SECONDS:-600}
+      GATEWAY_MAX_BODY_BYTES: ${GATEWAY_MAX_BODY_BYTES:-33554432}
+    extra_hosts:
+      # Metal has no container passthrough, so the engine runs on the host.
+      - "host.docker.internal:host-gateway"
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    cap_drop:
+      - ALL
