@@ -37,6 +37,15 @@ if [[ "${MLX_THINKING:-off}" == "on" ]]; then
   thinking_args=(--enable-thinking)
 fi
 
+# Speculative decoding. Off by default: it speeds up structured output such as
+# code, but slows prose and collapses concurrent throughput. See README.
+draft_args=()
+if [[ -n "${MLX_DRAFT_MODEL:-}" ]]; then
+  draft_args=(--draft-model "${MLX_DRAFT_MODEL}" --draft-kind "${MLX_DRAFT_KIND:-dflash}")
+  echo "NOTE: speculative decoding is on. Expect faster code output," >&2
+  echo "      slower prose, and much lower throughput under concurrency." >&2
+fi
+
 auth_state=$([[ ${#auth_args[@]} -gt 0 ]] && echo on || echo off)
 echo "Starting MLX engine: model=${MODEL} bind=${BIND}:${PORT} thinking=${MLX_THINKING:-off} auth=${auth_state}"
 exec ./.venv/bin/python -m mlx_vlm.server \
@@ -45,4 +54,5 @@ exec ./.venv/bin/python -m mlx_vlm.server \
   --port "${PORT}" \
   --log-level INFO \
   ${auth_args[@]+"${auth_args[@]}"} \
+  ${draft_args[@]+"${draft_args[@]}"} \
   ${thinking_args[@]+"${thinking_args[@]}"}

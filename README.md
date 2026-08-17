@@ -109,6 +109,57 @@ even though the API does not.
 | `MLX_MODEL` | `mlx-community/Qwen3.5-9B-4bit` | Model to load. |
 | `MLX_BIND` | `127.0.0.1` | Engine bind address. Loopback keeps it off your LAN. |
 | `MLX_THINKING` | `off` | Set to `on` to restore chain-of-thought. |
+| `MLX_DRAFT_MODEL` | *(empty)* | Speculative drafter, e.g. `z-lab/Qwen3.5-9B-DFlash`. See the performance log. |
+| `MLX_DRAFT_KIND` | `dflash` | Drafter family: `dflash`, `eagle3`, or `mtp`. |
+
+## Performance log
+
+Hardware: Apple M5, 10 GPU cores, 24 GB unified memory, macOS 26.6.1.
+Stack: mlx 0.32.0, mlx-vlm 0.6.13, model `mlx-community/Qwen3.5-9B-4bit`.
+
+Reproduce any row with `uv run --with openai python bench.py "<label>"`.
+
+**TTFT** is time to first token. **Single TPS** is decode speed for one stream,
+median across the four workloads. **Throughput TPS** is aggregate tokens per
+second across 4 concurrent requests.
+
+| Date | Config | TTFT short | TTFT 2k | Single TPS | Throughput TPS |
+|---|---|---|---|---|---|
+| 2026-08-17 | baseline (default) | 0.43s | 3.67s | **27.4** | **62.5** |
+| 2026-08-17 | + DFlash drafter | 0.63s | 4.34s | 21.7 | 8.5 |
+
+Single-stream detail, baseline vs DFlash:
+
+| Workload | baseline | DFlash | change |
+|---|---|---|---|
+| short prompt | 27.6 | 20.1 | -27% |
+| long generation | 27.4 | 23.3 | -15% |
+| code generation | 27.3 | **40.5** | **+48%** |
+| 2k-token prompt | 26.0 | 14.9 | -43% |
+
+### What the numbers say
+
+Generation holds ~27 tok/s regardless of output length. Prefill is the weak
+spot: a 2k-token prompt costs 3.67s before the first token, about 560 tok/s.
+
+Speculative decoding via `z-lab/Qwen3.5-9B-DFlash` is **off by default** because
+it is a trade, not an upgrade. It wins big on structured output, where the
+drafter predicts well: code generation reached 40.5 tok/s across three repeats
+(39.6, 41.5, 40.5). It loses on prose, where drafts get rejected and the work is
+wasted.
+
+Concurrency is where it fails hardest. Aggregate throughput fell from 62.5 to
+8.5 tok/s, confirmed at 7.7 and 6.3 on repeat runs. Speculation competes with
+batched decode for the same GPU, so every extra client makes it worse.
+
+Turn it on only for a single-user, code-heavy workload:
+
+```bash
+MLX_DRAFT_MODEL=z-lab/Qwen3.5-9B-DFlash ./serve-host.sh
+```
+
+Untested so far: `--kv-bits` quantization, `--prefill-step-size` against that
+3.67s prefill, and `--max-num-seqs` for concurrency.
 
 ## Thinking is off by default
 
