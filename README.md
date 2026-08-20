@@ -79,6 +79,48 @@ machine starts swapping under a long prompt, this is the first thing to check.
 Measured peak on this machine: **18.6 GB** for text, **18.8 GB** with an image.
 Both sit above the default cap, which is why the engine needs the raised limit.
 
+## Context limits
+
+The model accepts 262144 tokens. This machine does not. Weights take 16.05 GB
+of the 21 GB wired limit, and a short request already peaks at 18.55 GB, so
+roughly 2.4 GB is left for the KV cache and the prefill workspace.
+
+What is measured, and what is not:
+
+| Context | Result |
+|---|---|
+| ~2K tokens | works, 11.5s to first token |
+| ~57K tokens | **exhausted memory and restarted the machine** |
+| between | untested |
+
+The 57K attempt ran with 8-bit KV quantization and `--max-num-seqs 1`, the two
+settings that should have made it fit. It still failed. Prefill decayed from
+102 tok/s to 35 tok/s as the cache grew, free memory reached 0.06 GB, swap
+filled to 1.9 GB, and the machine rebooted.
+
+Raise the context in small steps and watch `peak_memory` in the response
+`timings`. Do not jump straight to a large value.
+
+Two findings worth knowing before you tune:
+
+- `--max-kv-size` **preallocates**. On an identical two-token prompt, a cap of
+  4096 peaked at 18.54 GB and a cap of 65536 peaked at 19.73 GB. The cap costs
+  memory whether or not you use the context.
+- Prefill, not decode, is the wall. It is 174 tok/s on a 2K prompt and decays
+  with length. Even if a long context fit, a 32K prompt would approach the
+  600s `GATEWAY_TIMEOUT_SECONDS`.
+
+The engine exposes the knobs through `serve-host.sh`, all off by default:
+
+| Variable | Effect |
+|---|---|
+| `MLX_MAX_KV_SIZE` | Cap the KV cache in tokens. Preallocates. |
+| `MLX_KV_BITS` | Quantize the KV cache, e.g. `8`. Costs prefill speed. |
+| `MLX_MAX_NUM_SEQS` | Bound concurrent sequences. `1` makes peak memory predictable. |
+
+For a genuinely long context on this hardware, use the 9B instead. Its weights
+are about a third the size, which is where the headroom comes from.
+
 ## Start
 
 ```bash
@@ -153,6 +195,9 @@ even though the API does not.
 | `MLX_MODEL` | `models/Qwen3.8-27B-Uncensored-MLX` | Model to load. A local directory or a Hugging Face repo id. |
 | `MLX_BIND` | `127.0.0.1` | Engine bind address. Loopback keeps it off your LAN. |
 | `MLX_THINKING` | `off` | Set to `on` to restore chain-of-thought. |
+| `MLX_MAX_KV_SIZE` | *(empty)* | KV cache cap in tokens. Preallocates. See [Context limits](#context-limits). |
+| `MLX_KV_BITS` | *(empty)* | Quantize the KV cache, e.g. `8`. Costs prefill speed. |
+| `MLX_MAX_NUM_SEQS` | *(empty)* | Cap concurrent sequences. Unbounded by default. |
 | `MLX_DRAFT_MODEL` | *(empty)* | Speculative drafter, e.g. `z-lab/Qwen3.5-9B-DFlash`. See the performance log. |
 | `MLX_DRAFT_KIND` | `dflash` | Drafter family: `dflash`, `eagle3`, or `mtp`. |
 

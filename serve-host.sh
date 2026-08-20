@@ -46,13 +46,34 @@ if [[ -n "${MLX_DRAFT_MODEL:-}" ]]; then
   echo "      slower prose, and much lower throughput under concurrency." >&2
 fi
 
+# Context window. The model itself accepts 262144 tokens, but memory sets the
+# real ceiling: the KV cache grows 64 KiB per token at bf16. Quantizing the
+# cache to 8 bits halves that and costs little accuracy. See README.
+kv_args=()
+if [[ -n "${MLX_MAX_KV_SIZE:-}" ]]; then
+  kv_args+=(--max-kv-size "${MLX_MAX_KV_SIZE}")
+fi
+if [[ -n "${MLX_KV_BITS:-}" ]]; then
+  kv_args+=(--kv-bits "${MLX_KV_BITS}")
+fi
+
+# Bound the continuous batch. One sequence keeps peak memory predictable, which
+# is what makes a long context fit. Extra requests wait in the queue.
+seq_args=()
+if [[ -n "${MLX_MAX_NUM_SEQS:-}" ]]; then
+  seq_args+=(--max-num-seqs "${MLX_MAX_NUM_SEQS}")
+fi
+
 auth_state=$([[ ${#auth_args[@]} -gt 0 ]] && echo on || echo off)
 echo "Starting MLX engine: model=${MODEL} bind=${BIND}:${PORT} thinking=${MLX_THINKING:-off} auth=${auth_state}"
+echo "  context=${MLX_MAX_KV_SIZE:-unbounded} kv_bits=${MLX_KV_BITS:-16} max_seqs=${MLX_MAX_NUM_SEQS:-unbounded}"
 exec ./.venv/bin/python -m mlx_vlm.server \
   --model "${MODEL}" \
   --host "${BIND}" \
   --port "${PORT}" \
   --log-level INFO \
   ${auth_args[@]+"${auth_args[@]}"} \
+  ${kv_args[@]+"${kv_args[@]}"} \
+  ${seq_args[@]+"${seq_args[@]}"} \
   ${draft_args[@]+"${draft_args[@]}"} \
   ${thinking_args[@]+"${thinking_args[@]}"}
