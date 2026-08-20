@@ -2,8 +2,8 @@
 
 Run against the engine directly (port 8080) or through the gateway (8000):
 
-    uv run --with openai python bench.py "baseline"
-    uv run --with openai python bench.py "dflash" --base-url http://127.0.0.1:8000/v1
+    uv run --with openai python core/bench.py "baseline"
+    uv run --with openai python core/bench.py "dflash" --base-url http://127.0.0.1:8000/v1
 
 Print a markdown row ready to paste into the performance log in README.md.
 """
@@ -16,12 +16,55 @@ import statistics
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from pathlib import Path
 
 from openai import OpenAI
 
-# The engine serves one model, so the id only has to match what it reports.
-# Override when you benchmark a different load: BENCH_MODEL=... python bench.py
-MODEL = os.environ.get("BENCH_MODEL", "models/Qwen3.8-27B-Uncensored-MLX")
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def _profile_model() -> str | None:
+    """Read MLX_MODEL out of the selected profile's model.env."""
+    name = os.environ.get("MLX_PROFILE") or ""
+    if not name:
+        default = ROOT / "profiles" / "default"
+        if default.is_file():
+            name = default.read_text(encoding="utf-8").strip()
+    if not name:
+        return None
+    model_env = ROOT / "profiles" / name / "model.env"
+    if not model_env.is_file():
+        return None
+    # model.env is plain KEY=value, so split on the first "=" and nothing more.
+    for line in model_env.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        if key.strip() == "MLX_MODEL" and value.strip():
+            return value.strip()
+    return None
+
+
+def _active_model() -> str:
+    """Return the model id to send, mirroring the shell precedence.
+
+    Do not read /v1/models. The engine hot-swaps: --model is only a preload, it
+    loads whatever id a request names, and /v1/models lists every model it has
+    seen. A wrong id here unloads the served model and downloads another.
+    """
+    explicit = os.environ.get("BENCH_MODEL") or os.environ.get("MLX_MODEL")
+    if explicit:
+        return explicit
+    model = _profile_model()
+    if model is None:
+        raise SystemExit(
+            "No model id. Set BENCH_MODEL or MLX_MODEL, or give the selected "
+            "profile an MLX_MODEL line in its model.env."
+        )
+    return model
+
+
 LONG_PROMPT = (
     "Background notes.\n"
     + ("The system processes events in order. " * 300)
@@ -51,13 +94,13 @@ class Run:
         return self.tokens / decode if decode > 0 else 0.0
 
 
-def stream_once(client: OpenAI, prompt: str, max_tokens: int) -> Run:
+def stream_once(client: OpenAI, model: str, prompt: str, max_tokens: int) -> Run:
     """Stream one completion and time it."""
     start = time.time()
     ttft = 0.0
     tokens = 0
     stream = client.chat.completions.create(
-        model=MODEL,
+        model=model,
         max_tokens=max_tokens,
         stream=True,
         messages=[{"role": "user", "content": prompt}],
@@ -72,18 +115,22 @@ def stream_once(client: OpenAI, prompt: str, max_tokens: int) -> Run:
     return Run(ttft=ttft, tokens=tokens, elapsed=time.time() - start)
 
 
-def measure_single(client: OpenAI) -> list[tuple[str, Run]]:
+def measure_single(client: OpenAI, model: str) -> list[tuple[str, Run]]:
     """Run each case once, one at a time."""
-    return [(label, stream_once(client, prompt, n)) for label, prompt, n in CASES]
+    return [
+        (label, stream_once(client, model, prompt, n)) for label, prompt, n in CASES
+    ]
 
 
-def measure_throughput(client: OpenAI, concurrency: int) -> float:
+def measure_throughput(client: OpenAI, model: str, concurrency: int) -> float:
     """Return aggregate tokens per second across concurrent requests."""
     prompt = "Write a detailed essay about distributed systems."
     start = time.time()
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
         runs = list(
-            pool.map(lambda _: stream_once(client, prompt, 200), range(concurrency))
+            pool.map(
+                lambda _: stream_once(client, model, prompt, 200), range(concurrency)
+            )
         )
     wall = time.time() - start
     return sum(r.tokens for r in runs) / wall if wall > 0 else 0.0
@@ -96,10 +143,11 @@ def main() -> None:
     parser.add_argument("--concurrency", type=int, default=CONCURRENCY)
     args = parser.parse_args()
 
+    model = _active_model()
     client = OpenAI(base_url=args.base_url, api_key="unused")
 
-    print(f"== {args.label} ==")
-    results = measure_single(client)
+    print(f"== {args.label} == {model}")
+    results = measure_single(client, model)
     for label, run in results:
         print(
             f"  {label:18} TTFT {run.ttft:5.2f}s  "
@@ -109,7 +157,7 @@ def main() -> None:
     short_ttft = results[0][1].ttft
     long_ttft = results[-1][1].ttft
     single_tps = statistics.median(run.tps for _, run in results)
-    throughput = measure_throughput(client, args.concurrency)
+    throughput = measure_throughput(client, model, args.concurrency)
     print(f"  throughput x{args.concurrency:<7} {throughput:5.1f} tok/s aggregate")
 
     print("\nmarkdown row:")

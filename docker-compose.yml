@@ -1,6 +1,6 @@
 services:
   gateway:
-    build: ./gateway
+    build: ./core/gateway
     image: mlx-openai-gateway:local
     container_name: mlx-gateway
     restart: unless-stopped

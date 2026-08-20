@@ -1,0 +1,11 @@
+# Empty on purpose. This profile lists no files.
+#
+# core/fetch.sh exists to name exact files and resume a dropped shard by byte
+# range. This repo needs neither: it ships one build, so MLX_MODEL can be the
+# bare repo id, and mlx_vlm downloads it on the first serve.
+#
+# The trade: that first serve pulls about 5 GB through huggingface_hub, which
+# restarts a dropped shard from byte zero. On a link that resets, add the
+# filenames here and set MODEL_REPO and MODEL_DIR in model.env.
+#
+# One path per line. Blank lines and # lines are skipped. No globs.

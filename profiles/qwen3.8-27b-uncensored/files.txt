@@ -1,0 +1,23 @@
+# The 14 root files of orcarouter/Qwen3.8-27B-Uncensored-MLX: 16.08 GB.
+#
+# Why this list exists at all: the repo ships four quantizations in one tree —
+# 2, 4, 6 and 8-bit, 93.85 GB in total — and mirrors the 4-bit build at the
+# repo root. mlx_vlm resolves a repo id with the pattern "*.safetensors", and
+# fnmatch lets "*" cross a "/", so that pattern matches every subfolder copy.
+# Loading by repo id downloads all 93.85 GB. Naming the root files costs 16.08.
+#
+# One path per line. Blank lines and # lines are skipped. No globs.
+README.md
+chat_template.jinja
+config.json
+generation_config.json
+model-00001-of-00003.safetensors
+model-00002-of-00003.safetensors
+model-00003-of-00003.safetensors
+model.safetensors.index.json
+preprocessor_config.json
+processor_config.json
+tokenizer.json
+tokenizer_config.json
+video_preprocessor_config.json
+vocab.json

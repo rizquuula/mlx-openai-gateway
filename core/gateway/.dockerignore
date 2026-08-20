@@ -1,5 +1,5 @@
-# Build context is ./gateway, set by docker-compose.yml. This file must live
-# here, not at the repo root, or Docker ignores it.
+# Build context is ./core/gateway, set by docker-compose.yml. This file must
+# live here, not at the repo root, or Docker ignores it.
 
 # Never ship secrets into an image layer.
 .env
