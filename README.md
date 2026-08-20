@@ -65,31 +65,57 @@ bytes already on disk.
 
 ## Memory
 
-The 4-bit weights are 16.05 GB on a 24 GB machine. macOS caps how much of that
-the GPU may wire down, and the default cap leaves almost no room for the KV
-cache. Raise it before you start the engine:
+The 4-bit weights are 16.05 GB on a 24 GB machine. A request peaks at 18.55 GB
+for text and 18.84 GB with an image.
+
+`iogpu.wired_limit_mb` caps how much memory the GPU may *wire*, meaning hold
+resident and non-pageable. It is a ceiling, not a reservation: while the engine
+is stopped the setting costs nothing.
+
+**The 27B does not need a raised limit to run.** It loads at the default cap and
+serves a single stream at full speed. What the raised limit buys is concurrency.
+
+| | Default (unset) | `21504` (21 GB) |
+|---|---|---|
+| Model loads | yes, peak 18.55 GB | yes, peak 18.55 GB |
+| Single stream | 8.0 tok/s | 8.4 tok/s |
+| 4 concurrent | **Metal OOM**, one request dies | 22.0 tok/s, all complete |
+| When it breaks | the request fails, the machine is fine | the machine rebooted |
+
+Both failure modes are measured, not predicted. At the default cap a 4-way load
+returns `kIOGPUCommandBufferCallbackErrorOutOfMemory`. With the limit at 21 GB a
+57k-token prompt took the whole machine down, because 18.55 GB of pinned memory
+left the kernel nothing to reclaim.
+
+So the limit decides **who loses** when memory runs out. Unset, the model yields
+and everything else keeps working. Raised, the model refuses to yield and macOS
+and your other apps get squeezed. If you run emulators, VMs or Xcode alongside
+the engine, leave it unset.
+
+To raise it anyway:
 
 ```bash
 sudo sysctl iogpu.wired_limit_mb=21504     # 21 GB
 ```
 
-The setting resets on reboot. If the engine dies during model load, or the
-machine starts swapping under a long prompt, this is the first thing to check.
+The setting resets on reboot, so it needs rerunning each time.
 
-Measured peak on this machine: **18.6 GB** for text, **18.8 GB** with an image.
-Both sit above the default cap, which is why the engine needs the raised limit.
+One caveat: after a Metal OOM the engine keeps answering health checks but every
+later request fails. Restart it — `pkill -f mlx_vlm.server` — rather than
+assuming the model is fine because `/healthz` is green.
 
 ## Context limits
 
 The model accepts 262144 tokens. This machine does not. Weights take 16.05 GB
-of the 21 GB wired limit, and a short request already peaks at 18.55 GB, so
-roughly 2.4 GB is left for the KV cache and the prefill workspace.
+of 24 GB and a short request already peaks at 18.55 GB, so a few GB are left for
+the KV cache and the prefill workspace. Raising the wired limit does not create
+headroom, it only decides whether the model may pin what it takes.
 
 What is measured, and what is not:
 
 | Context | Result |
 |---|---|
-| ~2K tokens | works, 11.5s to first token |
+| ~2K tokens | works, 2.8-11.5s to first token |
 | ~57K tokens | **exhausted memory and restarted the machine** |
 | between | untested |
 
@@ -217,7 +243,17 @@ second across 4 concurrent requests.
 
 | Date | Config | TTFT short | TTFT 2k | Single TPS | Throughput TPS |
 |---|---|---|---|---|---|
-| 2026-08-20 | baseline (default) | 1.32s | 11.51s | **8.4** | **22.0** |
+| 2026-08-20 | wired 21504 | 1.32s | 11.51s | **8.4** | **22.0** |
+| 2026-08-20 | wired default | 0.89s | 2.77s | **8.0** | OOM at x4 |
+
+The wired limit does not change single-stream speed: 8.0 against 8.4 tok/s is
+noise. It changes what happens under concurrency. At the default cap the 4-way
+stage failed with `kIOGPUCommandBufferCallbackErrorOutOfMemory`; at 21 GB it
+completed at 22.0 tok/s. See [Memory](#memory).
+
+TTFT on the 2k prompt varied a lot between runs, 11.51s and 2.77s, on identical
+settings apart from the wired limit. Single-stream decode was unchanged across
+both, so treat the 2k TTFT as noisy rather than as a wired-limit effect.
 
 Single-stream detail:
 
@@ -248,12 +284,23 @@ has about 2 GB of headroom. Expect it not to fit.
 
 ### Qwen3.5-9B-4bit
 
-These rows predate the 27B and measure `mlx-community/Qwen3.5-9B-4bit`.
+`mlx-community/Qwen3.5-9B-4bit`. The 2026-08-17 rows predate the 27B and ran
+before any wired limit was set.
 
 | Date | Config | TTFT short | TTFT 2k | Single TPS | Throughput TPS |
 |---|---|---|---|---|---|
-| 2026-08-17 | baseline (default) | 0.43s | 3.67s | **27.4** | **62.5** |
+| 2026-08-17 | wired default | 0.43s | 3.67s | **27.4** | **62.5** |
 | 2026-08-17 | + DFlash drafter | 0.63s | 4.34s | 21.7 | 8.5 |
+| 2026-08-20 | wired 21504 | 0.43s | 3.10s | 25.9 | 73.8 |
+
+The 9B is the control for the wired-limit question. Its weights are about 5 GB,
+so it never approaches either cap, and the limit makes no difference: 25.9
+against 27.4 tok/s is run-to-run noise. Only a model that crowds the cap, like
+the 27B, cares about the setting.
+
+Measure a run cold and you will see a much larger TTFT on the first workload,
+37.79s in one case, because the first request pages the weights in from disk.
+Warm the engine with one throwaway request before benchmarking.
 
 Single-stream detail, baseline vs DFlash:
 
