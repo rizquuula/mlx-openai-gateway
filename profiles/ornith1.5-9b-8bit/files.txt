@@ -1,0 +1,17 @@
+# The 8 files of ornith-ai/Ornith-1.5-9B-MLX-8bit: 9.54 GB.
+#
+# Naming the files is what lets core/fetch.sh resume a dropped shard by byte
+# range. The weights arrive in two shards, so a link that resets is expensive.
+#
+# assets/ is excluded on purpose. It holds a logo and an eval chart, which the
+# engine never reads.
+#
+# One path per line. Blank lines and # lines are skipped. No globs.
+README.md
+chat_template.jinja
+config.json
+model-00001-of-00002.safetensors
+model-00002-of-00002.safetensors
+model.safetensors.index.json
+tokenizer.json
+tokenizer_config.json

@@ -3,12 +3,14 @@
 An OpenAI-compatible `/v1` endpoint for a local MLX model on Apple silicon.
 Serves text and images from one model load.
 
-Which model you serve is a [profile](#profiles). Two ship with the repo:
+Which model you serve is a [profile](#profiles). Four ship with the repo:
 
 | Profile | Model | Notes |
 |---|---|---|
 | `qwen3.8-27b-uncensored` | `orcarouter/Qwen3.8-27B-Uncensored-MLX` | [NOTES.md](profiles/qwen3.8-27b-uncensored/NOTES.md) |
 | `qwen3.5-9b` | `mlx-community/Qwen3.5-9B-4bit` | [NOTES.md](profiles/qwen3.5-9b/NOTES.md) |
+| `ornith1.5-9b-8bit` | `ornith-ai/Ornith-1.5-9B-MLX-8bit` | [NOTES.md](profiles/ornith1.5-9b-8bit/NOTES.md) |
+| `ornith1.5-9b-4bit` | `ornith-ai/Ornith-1.5-9B-MLX-4bit` | [NOTES.md](profiles/ornith1.5-9b-4bit/NOTES.md) |
 
 `qwen3.8-27b-uncensored` is the default.
 
@@ -52,6 +54,10 @@ To turn auth back on, set either key in `.env`:
 
 Set one and that port starts requiring it. Leave it empty and that port is open.
 A client key is never forwarded to the engine.
+
+When `MLX_ENGINE=lm`, `MLX_ENGINE_API_KEY` is unavailable: `mlx_lm.server` reads
+no key and no `Authorization` header. `core/serve.sh` refuses to start if the key
+is set, rather than ignore it and leave port 8080 unguarded.
 
 ## Start
 
@@ -117,6 +123,9 @@ the gateway does not forward them; the module docstring says which and why.
 
 `/healthz` is the gateway's own health check and needs no key.
 
+`/docs` and `/redoc` need the `vlm` engine. `mlx_lm.server` serves no
+`/openapi.json`, so there is no spec to re-address under `MLX_ENGINE=lm`.
+
 Swagger UI loads its CSS and JS from a CDN, so the page itself needs internet
 even though the API does not.
 
@@ -132,6 +141,7 @@ even though the API does not.
 | `GATEWAY_MAX_BODY_BYTES` | `33554432` | 32 MB. Inline base64 images are large. |
 | `MLX_BIND` | `127.0.0.1` | Engine bind address. Loopback keeps it off your LAN. |
 | `MLX_THINKING` | `off` | Set to `on` to restore chain-of-thought. |
+| `MLX_ENGINE` | `vlm` | Which engine serves the model. `lm` serves a text-only build that carries no vision tower. |
 | `MLX_PROFILE` | *(from `profiles/default`)* | Which profile to serve. See [Profiles](#profiles). |
 
 `MLX_MODEL` and the tuning knobs (`MLX_MAX_KV_SIZE`, `MLX_KV_BITS`,
@@ -194,6 +204,8 @@ The numbers themselves live with the model they describe:
 
 - [Qwen3.8-27B-Uncensored, 4-bit](profiles/qwen3.8-27b-uncensored/NOTES.md#performance)
 - [Qwen3.5-9B, 4-bit](profiles/qwen3.5-9b/NOTES.md#performance)
+- [Ornith-1.5-9B, 8-bit](profiles/ornith1.5-9b-8bit/NOTES.md#performance)
+- [Ornith-1.5-9B, 4-bit](profiles/ornith1.5-9b-4bit/NOTES.md#performance)
 
 ## Thinking is off by default
 
