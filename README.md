@@ -81,9 +81,7 @@ from openai import OpenAI
 # The SDK demands a non-empty string, but the gateway ignores it unless you
 # set GATEWAY_API_KEYS.
 client = OpenAI(base_url="http://127.0.0.1:8000/v1", api_key="unused")
-# The engine reports whatever the profile's MLX_MODEL named, so this id is the
-# MLX_MODEL line in profiles/<name>/model.env, verbatim.
-# Confirm with: curl -s http://127.0.0.1:8000/v1/models
+# Send the MLX_MODEL line from profiles/<name>/model.env, verbatim.
 MODEL = "models/Qwen3.8-27B-Uncensored-MLX"
 
 # text
@@ -102,6 +100,10 @@ client.chat.completions.create(model=MODEL, messages=[{"role": "user", "content"
 
 Streaming works on both paths (`stream=True`).
 
+Send the id the profile names. The engine loads whatever id a request carries,
+so a different one makes it unload the running model and fetch that one instead.
+`/v1/models` lists every model the engine has seen, not the one it serves.
+
 ## API docs
 
 Swagger UI: <http://127.0.0.1:8000/docs> — ReDoc at `/redoc`.
@@ -109,15 +111,11 @@ Swagger UI: <http://127.0.0.1:8000/docs> — ReDoc at `/redoc`.
 No key is needed. If you set `GATEWAY_API_KEYS`, click *Authorize* and paste a
 value before using *Try it out*.
 
-The spec comes from the engine, rewritten on the way through. The engine
-documents its routes bare (`/chat/completions`) but the gateway only forwards
-`/v1/*`, so `openapi_rewriter.py` re-addresses every path to the `/v1` form the
-gateway actually serves. Three documented routes are dropped because no `/v1`
-form exists: `/health` and `/unload` are bare-only, and the engine documents
-`/responses/input_tokens` without mounting it anywhere.
+The spec comes from the engine, re-addressed to `/v1` on the way through by
+`openapi_rewriter.py`. Every path left in it is live. Three are dropped because
+the gateway does not forward them; the module docstring says which and why.
 
-Every path left in the spec is live. `/health` has a gateway equivalent at
-`/healthz`, which needs no key.
+`/healthz` is the gateway's own health check and needs no key.
 
 Swagger UI loads its CSS and JS from a CDN, so the page itself needs internet
 even though the API does not.
@@ -137,8 +135,8 @@ even though the API does not.
 | `MLX_PROFILE` | *(from `profiles/default`)* | Which profile to serve. See [Profiles](#profiles). |
 
 `MLX_MODEL` and the tuning knobs (`MLX_MAX_KV_SIZE`, `MLX_KV_BITS`,
-`MLX_MAX_NUM_SEQS`, `MLX_DRAFT_MODEL`, `MLX_DRAFT_KIND`) are not in this table
-any more. They belong to a model, so they live in `profiles/<name>/model.env`.
+`MLX_MAX_NUM_SEQS`, `MLX_DRAFT_MODEL`, `MLX_DRAFT_KIND`) belong to a model, so
+they live in `profiles/<name>/model.env` instead.
 
 `MLX_PROFILE` in `.env` does nothing. The scripts pick the profile before they
 read `.env`, so set it in the environment or pass it as an argument.
@@ -176,8 +174,7 @@ $EDITOR profiles/my-model/model.env
 ./serve-host.sh my-model
 ```
 
-`core/` holds the code every profile shares: `serve.sh`, `fetch.sh`,
-`profile.sh`, `bench.py`, and `gateway/`. `./serve-host.sh` and
+`core/` holds the code every profile shares. `./serve-host.sh` and
 `./fetch-model.sh` at the root are wrappers that call into it.
 
 ## Performance log
