@@ -12,7 +12,7 @@ if [[ -f .env ]]; then
   set -a; source .env; set +a
 fi
 
-MODEL="${MLX_MODEL:-mlx-community/Qwen3.5-9B-4bit}"
+MODEL="${MLX_MODEL:-models/Qwen3.8-27B-Uncensored-MLX}"
 PORT="${MLX_PORT:-8080}"
 # Loopback only. OrbStack still routes host.docker.internal here, so the
 # gateway container reaches the engine while the LAN cannot.

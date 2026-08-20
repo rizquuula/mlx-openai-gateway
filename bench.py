@@ -11,6 +11,7 @@ Print a markdown row ready to paste into the performance log in README.md.
 from __future__ import annotations
 
 import argparse
+import os
 import statistics
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -18,7 +19,9 @@ from dataclasses import dataclass
 
 from openai import OpenAI
 
-MODEL = "mlx-community/Qwen3.5-9B-4bit"
+# The engine serves one model, so the id only has to match what it reports.
+# Override when you benchmark a different load: BENCH_MODEL=... python bench.py
+MODEL = os.environ.get("BENCH_MODEL", "models/Qwen3.8-27B-Uncensored-MLX")
 LONG_PROMPT = (
     "Background notes.\n"
     + ("The system processes events in order. " * 300)
