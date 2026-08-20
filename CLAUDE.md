@@ -63,6 +63,13 @@ the project and orphans the running network.
 **Do not edit `.gitignore` for `profiles/`.** It is already correct: `models/`
 is fully ignored and every committed path under `profiles/` is trackable.
 
+**`MLX_ENGINE` picks between two engines that take different flags.** `vlm` is
+the default and serves text and images. `lm` serves a text-only build whose
+checkpoint carries no vision tower. Add a knob to one path and decide explicitly
+what the other path does with it: error, warn, or translate. `mlx_lm.server` has
+no authentication at all, which is why `MLX_ENGINE_API_KEY` is a hard error on
+the `lm` path — an ignored key would leave the port open.
+
 **Never touch** `models/`, `.venv/`, `.env`, or `engine.log`. `.env` is the
 user's local machine config and is not in git.
 
