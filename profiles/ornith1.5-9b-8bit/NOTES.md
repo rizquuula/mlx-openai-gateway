@@ -38,49 +38,78 @@ MLX_PROFILE=ornith1.5-9b-8bit uv run --with openai python core/bench.py "ornith 
 
 ## Performance
 
-`models/Ornith-1.5-9B-MLX-8bit`.
+`models/Ornith-1.5-9B-MLX-8bit`. Both rows ran on the same day at the default
+wired limit, back to back with the other profiles.
 
 | Date | Config | TTFT short | TTFT 2k | Single TPS | Throughput TPS |
 |---|---|---|---|---|---|
 | 2026-08-21 | engine lm, thinking off | 0.69s | 3.43s | **14.6** | **52.4** |
+| 2026-08-21 | repeat | 0.61s | 4.83s | **14.7** | **38.6** |
 
-Single-stream detail:
+Single-stream detail, first run:
 
-| Workload | 8-bit | 4-bit | 4-bit gain |
+| Workload | TTFT | tok/s |
+|---|---|---|
+| short prompt | 0.69s | 14.6 |
+| long generation | 0.44s | 14.7 |
+| code generation | 0.42s | 13.9 |
+| 2k-token prompt | 3.43s | 14.7 |
+
+## Memory
+
+All figures are GiB, the unit `vmmap` and `du` both report.
+
+| Stage | 8-bit | 4-bit | 8-bit costs |
 |---|---|---|---|
-| short prompt | 14.6 | 25.7 | +76% |
-| long generation | 14.7 | 22.3 | +52% |
-| code generation | 13.9 | 26.6 | +91% |
-| 2k-token prompt | 14.7 | 26.1 | +78% |
+| weights on disk | 8.90 | 4.73 | +4.17 |
+| resident after load | 9.6 | 5.4 | +4.2 |
+| peak under the benchmark | 11.4 | 7.3 | +4.1 |
+| runtime above weights | 0.7 | 0.7 | none |
+| growth under load | 1.8 | 1.9 | none |
+
+Measured as the physical footprint reported by `vmmap -summary`, not by `ps`.
+MLX holds the weights in Metal buffers in unified memory, and `ps rss` does not
+count them: it reported 1.07 GiB for an engine holding 15 GiB.
+
+Read the last two rows first. Loading costs about 0.7 GiB beyond the weight
+files on both builds, and serving the benchmark adds another 1.8 to 1.9 GiB on
+both. Neither figure responds to quantization, because the KV cache and the
+activations do not shrink when the weights do.
+
+So the whole memory difference between these two profiles is the weight
+difference: 4.2 GiB resident, against 4.17 GiB on disk. Choosing 4-bit saves
+that and nothing else.
+
+Both builds fit this 24 GB machine with room to spare at the default wired
+limit. Neither needs the tuning the 27B requires.
 
 ## What the numbers say
 
-The 8-bit build decodes at **14.6 tok/s**. The [4-bit
-build](../ornith1.5-9b-4bit/NOTES.md#performance) decodes at 25.9 tok/s on the
-same machine, so 4-bit is **1.77x faster** for one stream.
+The 8-bit build decodes at **14.6 to 14.7 tok/s**, and the repeat run confirms
+it. The [4-bit build](../ornith1.5-9b-4bit/NOTES.md#performance) reached 25.9
+and 23.0 tok/s on the same two runs, so 4-bit decodes **1.6 to 1.8x faster**.
 
-That ratio is not a coincidence. The weights are 9.54 GB against 5.06 GB, a
-factor of 1.89. Decode reads every weight once per token, so it is bound by
-memory bandwidth, and speed tracks weight bytes almost exactly. Buying 8-bit
-precision costs you close to half your tokens per second.
+The weights differ by a factor of 1.89, 8.90 GiB against 4.73 GiB. Decode reads
+every weight once per token, so it is bound by memory bandwidth and speed
+tracks weight bytes. The measured range sits just under what the weights
+predict.
 
-Prefill behaves differently. The 2k-token prompt costs 3.43s here and 3.18s at
-4-bit, a difference of only 7%. Prefill multiplies whole matrices and is bound
-by compute, not by bandwidth, so the extra bits are nearly free before the
+Prefill gains far less. The 2k-token prompt cost 3.43s and 4.83s here against
+3.18s and 4.48s at 4-bit. Prefill multiplies whole matrices and is bound by
+compute rather than by bandwidth, so the extra bits are nearly free before the
 first token.
 
-Generation speed is flat across output length: 14.6, 14.7, 13.9, and 14.7 tok/s
-across the four workloads. Nothing degrades as the answer grows.
+Single-stream decode is the stable measurement here. Aggregate throughput is
+not: the same 8-bit build gave 52.4 and 38.6 tok/s on two runs, and the 4-bit
+gave 79.2 and 54.2. Compare concurrency figures only within one run, and repeat
+a run before you trust a throughput difference.
 
-Under 4 concurrent requests, aggregate throughput reaches 52.4 tok/s against
-79.2 at 4-bit. The gap narrows from 77% to 51%, because batched decode reuses
-each loaded weight across the requests in the batch and recovers part of the
-bandwidth cost.
+Decode speed does not change with output length: 14.6, 14.7, 13.9, and 14.7
+tok/s across the four workloads.
 
-Pick 8-bit when output quality matters more than latency. Pick 4-bit for
-interactive use. This benchmark measures speed only and says nothing about
-which build answers better.
+Pick 8-bit when output quality matters more than latency and you can spare the
+4.2 GiB. Pick 4-bit for interactive use. This benchmark measures speed and
+memory only. It says nothing about which build answers better.
 
-Untested so far: `--prefill-step-size` against that 3.43s prefill, and
-speculative decoding through `--draft-model`.
-
+Untested so far: `--prefill-step-size` against that prefill, and speculative
+decoding through `--draft-model`.

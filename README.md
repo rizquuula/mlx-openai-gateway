@@ -200,6 +200,9 @@ The benchmark reads the model id from the same profile the scripts do, so
 median across the four workloads. **Throughput TPS** is aggregate tokens per
 second across 4 concurrent requests.
 
+[BENCHMARK.md](BENCHMARK.md) compiles every profile into one speed table and
+one memory table, and says what the numbers mean.
+
 The numbers themselves live with the model they describe:
 
 - [Qwen3.8-27B-Uncensored, 4-bit](profiles/qwen3.8-27b-uncensored/NOTES.md#performance)
